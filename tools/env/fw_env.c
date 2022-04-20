@@ -1097,10 +1097,31 @@ exit:
 	return rc;
 }
 
+int fw_env_open_real(struct env_opts *opts);
+
+int fw_env_open(struct env_opts *opts)
+{
+	int ret;
+	int nretries = 4;
+
+	while(nretries > 0) {
+		ret = fw_env_open_real(opts);
+		if (ret == 0) {
+			return ret;
+		}
+		// Retry on error with a small delay
+		nretries--;
+		if (nretries) {
+			sleep(1);
+		}
+	}
+	return ret;
+}
+
 /*
  * Prevent confusion if running from erased flash memory
  */
-int fw_env_open(struct env_opts *opts)
+int fw_env_open_real(struct env_opts *opts)
 {
 	int crc0, crc0_ok;
 	unsigned char flag0;
@@ -1145,8 +1166,10 @@ int fw_env_open(struct env_opts *opts)
 	}
 
 	dev_current = 0;
-	if (flash_io (O_RDONLY))
+	if (flash_io (O_RDONLY)) {
+		free(addr0);
 		return -1;
+	}
 
 	crc0 = crc32 (0, (uint8_t *) environment.data, ENV_SIZE);
 
@@ -1161,8 +1184,9 @@ int fw_env_open(struct env_opts *opts)
 	if (!HaveRedundEnv) {
 		if (!crc0_ok) {
 			fprintf (stderr,
-				"Warning: Bad CRC, using default environment\n");
-			memcpy(environment.data, default_environment, sizeof default_environment);
+				"Warning: Bad CRC, terminating.\n");
+			free(addr0);
+			return -1;
 		}
 	} else {
 		flag0 = *environment.flags;
